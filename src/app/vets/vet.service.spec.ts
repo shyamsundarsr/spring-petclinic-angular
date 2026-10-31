@@ -22,21 +22,21 @@
  * @author Vitaliy Fedoriv
  */
 
-import { inject, TestBed, waitForAsync } from '@angular/core/testing';
+import { inject, TestBed } from '@angular/core/testing';
 import {VetService} from './vet.service';
-import {HttpClient} from '@angular/common/http';
-import {HttpClientTestingModule, HttpTestingController} from '@angular/common/http/testing';
+import {provideHttpClient} from '@angular/common/http';
+import {provideHttpClientTesting} from '@angular/common/http/testing';
+import {HttpErrorHandler} from '../error.service';
 
 describe('VetService', () => {
   beforeEach(() => {
     TestBed.configureTestingModule({
       // Import the HttpClient mocking services
-      imports: [HttpClientTestingModule],
-      providers: [VetService]
+      providers: [provideHttpClient(), provideHttpClientTesting(), VetService, HttpErrorHandler]
     });
   });
 
-  it('should ...', waitForAsync(inject([HttpTestingController], (vetService: VetService, http: HttpClient) => {
+  it('should ...', inject([VetService], (vetService: VetService) => {
     expect(vetService).toBeTruthy();
-  })));
+  }));
 });

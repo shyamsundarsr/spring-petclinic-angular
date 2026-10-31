@@ -22,13 +22,12 @@
  * @author Vitaliy Fedoriv
  */
 
-import { ComponentFixture, TestBed, waitForAsync } from '@angular/core/testing';
+import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { CUSTOM_ELEMENTS_SCHEMA } from '@angular/core';
 import { OwnerAddComponent } from './owner-add.component';
-import { FormsModule } from '@angular/forms';
-import { Router } from '@angular/router';
+import { FormField, FormRoot } from '@angular/forms/signals';
+import { provideRouter, Router } from '@angular/router';
 import { OwnerService } from '../owner.service';
-import { RouterTestingModule } from '@angular/router/testing';
 import { RouterStub } from '../../testing/router-stubs';
 import { Owner } from '../owner';
 import { Observable, of } from 'rxjs';
@@ -37,72 +36,114 @@ import { OwnersRoutingModule } from '../owners-routing.module';
 import { OwnerListComponent } from '../owner-list/owner-list.component';
 
 class OwnserServiceStub {
-  addOwner(owner: Owner): Observable<Owner> {
-    return of(owner);
-  }
+    addOwner(owner: Owner): Observable<Owner> {
+        return of(owner);
+    }
 }
 
 describe('OwnerAddComponent', () => {
-  let component: OwnerAddComponent;
-  let fixture: ComponentFixture<OwnerAddComponent>;
-  let router: Router;
-  beforeEach(
-    waitForAsync(() => {
-      TestBed.configureTestingModule({
-        declarations: [OwnerAddComponent],
-        schemas: [CUSTOM_ELEMENTS_SCHEMA],
-        imports: [FormsModule, RouterTestingModule],
-        providers: [
-          { provide: OwnerService, useClass: OwnserServiceStub },
-          { provide: Router, useClass: RouterStub },
-        ],
-      }).compileComponents();
-    })
-  );
+    let component: OwnerAddComponent;
+    let fixture: ComponentFixture<OwnerAddComponent>;
+    let router: Router;
 
-  beforeEach(
-    waitForAsync(() => {
-      TestBed.configureTestingModule({
-        declarations: [OwnerAddComponent],
-        schemas: [CUSTOM_ELEMENTS_SCHEMA],
-        imports: [FormsModule, RouterTestingModule],
-        providers: [
-          { provide: OwnerService, useClass: OwnserServiceStub },
-          { provide: Router, useClass: RouterStub },
-        ],
-      }).compileComponents();
-    })
-  );
+    const setValue = async (selector: string, value: string) => {
+        const input = fixture.nativeElement.querySelector(selector) as HTMLInputElement;
+        input.value = value;
+        input.dispatchEvent(new Event('input'));
+        await fixture.whenStable();
+    };
+    const submitButton = () => fixture.nativeElement.querySelector('button[type=submit]') as HTMLButtonElement;
+    beforeEach(async () => {
+        await TestBed.configureTestingModule({
+            declarations: [OwnerAddComponent],
+            schemas: [CUSTOM_ELEMENTS_SCHEMA],
+            imports: [FormField, FormRoot],
+            providers: [
+                provideRouter([]),
+                { provide: OwnerService, useClass: OwnserServiceStub },
+                { provide: Router, useClass: RouterStub },
+            ],
+        }).compileComponents();
+    });
 
-  beforeEach(() => {
-    fixture = TestBed.createComponent(OwnerAddComponent);
-    component = fixture.componentInstance;
-    fixture.detectChanges();
-    router=TestBed.inject(Router);
-    spyOn(router,'navigate');
-  });
+    beforeEach(() => {
+        fixture = TestBed.createComponent(OwnerAddComponent);
+        component = fixture.componentInstance;
+        fixture.detectChanges();
+        router = TestBed.inject(Router);
+        vi.spyOn(router, 'navigate').mockReturnValue(undefined);
+    });
 
-  it('should create OwnerAddComponent', () => {
-    expect(component).toBeTruthy();
-  });
+    it('should create OwnerAddComponent', () => {
+        expect(component).toBeTruthy();
+    });
 
-  
 
-  it('back button routing', async() => {
-    let buttons = fixture.debugElement.queryAll(By.css('button'));
-    let backbutton = buttons[0];
-    backbutton.triggerEventHandler('click', null);
-    spyOn(component, 'gotoOwnersList').and.callThrough();
-    expect(router.navigate).toHaveBeenCalledWith(['/owners']);
-  });
 
- 
-  it('add owner', waitForAsync(() => {
-    let buttons = fixture.debugElement.queryAll(By.css('button'));
-    let addOwnerButton = buttons[1].nativeElement;
-    spyOn(component, 'onSubmit');
-    addOwnerButton.click();
-    expect(component.onSubmit).toHaveBeenCalled();
-  }));
+    it('back button routing', async () => {
+        let buttons = fixture.debugElement.queryAll(By.css('button'));
+        let backbutton = buttons[0];
+        backbutton.triggerEventHandler('click', null);
+        vi.spyOn(component, 'gotoOwnersList');
+        expect(router.navigate).toHaveBeenCalledWith(['/owners']);
+    });
+
+
+    it('add owner', async () => {
+        const addOwner = vi.spyOn(TestBed.inject(OwnerService), 'addOwner');
+        await setValue('#firstName', 'George');
+        await setValue('#lastName', 'Franklin');
+        await setValue('#address', '110 W. Liberty St.');
+        await setValue('#city', 'Madison');
+        await setValue('#telephone', '6085551023');
+        expect(submitButton().disabled).toBe(false);
+
+        fixture.nativeElement.querySelector('form').dispatchEvent(new Event('submit'));
+        await fixture.whenStable();
+
+        expect(addOwner).toHaveBeenCalledWith({
+            id: null,
+            firstName: 'George',
+            lastName: 'Franklin',
+            address: '110 W. Liberty St.',
+            city: 'Madison',
+            telephone: '6085551023'
+        });
+        expect(router.navigate).toHaveBeenCalledWith(['/owners']);
+    });
+
+    it('should disable the submit button until the form is valid', () => {
+        expect(submitButton().disabled).toBe(true);
+    });
+
+    it('should require exactly 10 digits for the telephone', async () => {
+        await setValue('#telephone', '608555102');
+        expect(fixture.nativeElement.textContent).toContain('Phone number must be exactly 10 digits');
+        await setValue('#telephone', '60855510234');
+        expect(fixture.nativeElement.textContent).toContain('Phone number must be exactly 10 digits');
+        expect(fixture.nativeElement.querySelector('#telephone').maxLength).toBe(10);
+        await setValue('#telephone', '6085551023');
+        expect(fixture.nativeElement.textContent).not.toContain('Phone number must be exactly 10 digits');
+    });
+
+    it('should reject blank address and city', async () => {
+        await setValue('#address', ' ');
+        await setValue('#city', '  ');
+        const text = fixture.nativeElement.textContent;
+        expect(text).toContain('Address is required');
+        expect(text).toContain('City is required');
+        expect(submitButton().disabled).toBe(true);
+    });
+
+    it('should show validation errors', async () => {
+        await setValue('#firstName', 'George1');
+        await setValue('#telephone', '60855a');
+        await setValue('#city', '');
+        const text = fixture.nativeElement.textContent;
+        expect(text).toContain('First name must consist of letters only');
+        expect(text).toContain('Phone number only accepts digits');
+        expect(text).toContain('City is required');
+        expect(submitButton().disabled).toBe(true);
+    });
 
 });

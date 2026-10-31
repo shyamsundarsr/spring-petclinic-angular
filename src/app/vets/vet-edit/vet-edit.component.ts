@@ -20,13 +20,14 @@
  * @author Vitaliy Fedoriv
  */
 
-import {Component, OnInit} from '@angular/core';
+import { Component, inject, input, linkedSignal, signal } from '@angular/core';
 import {Vet} from '../vet';
 import {VetService} from '../vet.service';
-import {ActivatedRoute, Router} from '@angular/router';
-import {SpecialtyService} from '../../specialties/specialty.service';
+import {Router} from '@angular/router';
 import {Specialty} from '../../specialties/specialty';
-import {FormBuilder, FormGroup, FormControl, Validators} from '@angular/forms';
+import {form} from '@angular/forms/signals';
+import {firstValueFrom} from 'rxjs';
+import {vetNamesSchema} from '../vet-form';
 
 @Component({
   selector: 'app-vet-edit',
@@ -34,63 +35,39 @@ import {FormBuilder, FormGroup, FormControl, Validators} from '@angular/forms';
   templateUrl: './vet-edit.component.html',
   styleUrls: ['./vet-edit.component.css']
 })
-export class VetEditComponent implements OnInit {
-  vetEditForm: FormGroup;
-  idCtrl: FormControl;
-  firstNameCtrl: FormControl;
-  lastNameCtrl: FormControl;
-  specialtiesCtrl: FormControl;
-  vet: Vet;
-  specList: Specialty[];
-  errorMessage: string;
+export class VetEditComponent {
+  private vetService = inject(VetService);
+  private router = inject(Router);
 
-  constructor(private formBuilder: FormBuilder, private specialtyService: SpecialtyService,
-              private vetService: VetService, private route: ActivatedRoute, private router: Router) {
-    this.vet = {} as Vet;
-    this.specList = [] as Specialty[];
-    this.buildForm();
-  }
+  // data of the route resolvers (VetResolver and SpecResolver), bound by the router (bindToComponentInputs)
+  readonly vet = input<Vet>();
+  readonly specs = input<Specialty[]>([]);
 
-  buildForm() {
-this.idCtrl = new FormControl(null);
-    this.firstNameCtrl = new FormControl('', [Validators.required, Validators.minLength(2)]);
-    this.lastNameCtrl = new FormControl('', [Validators.required, Validators.minLength(2)]);
-    this.specialtiesCtrl = new FormControl(null);
-    this.vetEditForm = this.formBuilder.group({
-      id: this.idCtrl,
-      firstName: this.firstNameCtrl,
-      lastName: this.lastNameCtrl,
-      specialties: this.specialtiesCtrl
-    });
-  }
+  readonly errorMessage = signal<string | null>(null);
+
+  // working copy edited through the signal form: the resolved vet is never mutated
+  private readonly vetModel = linkedSignal(() => {
+    const { firstName = '', lastName = '', specialties = [] } = this.vet() ?? {};
+    return { firstName, lastName, specialties: [...specialties] };
+  });
+
+  protected readonly vetForm = form(this.vetModel, vetNamesSchema(2), {
+    submission: {
+      action: async () => {
+        const vet = { id: this.vet().id, ...this.vetModel() } as Vet;
+        try {
+          await firstValueFrom(this.vetService.updateVet(vet.id.toString(), vet));
+          this.gotoVetList();
+        } catch (error) {
+          this.errorMessage.set(String(error));
+        }
+        return undefined;
+      }
+    }
+  });
 
   compareSpecFn(c1: Specialty, c2: Specialty): boolean {
     return c1 && c2 ? c1.id === c2.id : c1 === c2;
-  }
-
-  initFormValues() {
-    this.idCtrl.setValue(this.vet.id);
-    this.firstNameCtrl.setValue(this.vet.firstName);
-    this.lastNameCtrl.setValue(this.vet.lastName);
-    this.specialtiesCtrl.setValue(this.vet.specialties);
-  }
-
-  ngOnInit() {
-    // we use SpecResolver and VetResolver (get data before init component)
-    this.specList = this.route.snapshot.data.specs;
-    this.vet = this.route.snapshot.data.vet;
-    this.vet.specialties = this.route.snapshot.data.vet.specialties;
-    this.initFormValues();
-  }
-
-  onSubmit(vet: Vet) {
-    this.vetService.updateVet(vet.id.toString(), vet).subscribe(
-      res => {
-        console.log('update success');
-        this.gotoVetList();
-      },
-      error => this.errorMessage = error as any);
-
   }
 
   gotoVetList() {

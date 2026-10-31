@@ -16,14 +16,10 @@
  *
  */
 
-import {
-  Component,
-  EventEmitter,
-  OnInit,
-  Output,
-  ViewChild,
-} from '@angular/core';
-import { NgForm } from '@angular/forms';
+import { Component, inject, output, signal } from '@angular/core';
+import { form } from '@angular/forms/signals';
+import { specialtySchema } from '../specialty-form';
+import { firstValueFrom } from 'rxjs';
 import { Specialty } from '../specialty';
 import { SpecialtyService } from '../specialty.service';
 
@@ -33,27 +29,32 @@ import { SpecialtyService } from '../specialty.service';
   templateUrl: './specialty-add.component.html',
   styleUrls: ['./specialty-add.component.css'],
 })
-export class SpecialtyAddComponent implements OnInit {
-  @ViewChild('specialityForm', { static: true }) specialityForm: NgForm;
-  speciality: Specialty;
-  addedSuccess = false;
-  errorMessage: string;
-  @Output() newSpeciality = new EventEmitter<Specialty>();
+export class SpecialtyAddComponent {
+  private specialtyService = inject(SpecialtyService);
 
-  constructor(private specialtyService: SpecialtyService) {
-    this.speciality = {} as Specialty;
-  }
+  private readonly speciality = signal({ name: '' });
+  readonly addedSuccess = signal(false);
+  readonly errorMessage = signal<string | null>(null);
+  readonly newSpeciality = output<Specialty>();
 
-  ngOnInit() {}
-
-  onSubmit(specialty: Specialty) {
-    this.specialtyService.addSpecialty(specialty).subscribe(
-      (newSpecialty) => {
-        this.speciality = newSpecialty;
-        this.addedSuccess = true;
-        this.newSpeciality.emit(this.speciality);
-      },
-      (error) => (this.errorMessage = error as any)
-    );
-  }
+  protected readonly specialityForm = form(
+    this.speciality,
+    specialtySchema,
+    {
+      submission: {
+        action: async () => {
+          try {
+            const newSpecialty = await firstValueFrom(
+              this.specialtyService.addSpecialty({ name: this.speciality().name } as Specialty)
+            );
+            this.addedSuccess.set(true);
+            this.newSpeciality.emit(newSpecialty);
+          } catch (error) {
+            this.errorMessage.set(String(error));
+          }
+          return undefined;
+        }
+      }
+    }
+  );
 }

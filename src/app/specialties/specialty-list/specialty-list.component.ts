@@ -20,11 +20,12 @@
  * @author Vitaliy Fedoriv
  */
 
-import {Component, OnInit} from '@angular/core';
+import {Component, computed, inject, linkedSignal, signal} from '@angular/core';
+import {rxResource} from '@angular/core/rxjs-interop';
 import {Specialty} from '../specialty';
 import {SpecialtyService} from '../specialty.service';
 import {Router} from '@angular/router';
-import { finalize } from 'rxjs/operators';
+import {resourceErrorMessage, valueOrDefault} from '../../utils/resource-utils';
 
 @Component({
   selector: 'app-specialty-list',
@@ -32,43 +33,36 @@ import { finalize } from 'rxjs/operators';
   templateUrl: './specialty-list.component.html',
   styleUrls: ['./specialty-list.component.css']
 })
-export class SpecialtyListComponent implements OnInit {
-  specialties: Specialty[];
-  errorMessage: string;
-  responseStatus: number;
-  isInsert = false;
-  isSpecialitiesDataReceived: boolean = false;
+export class SpecialtyListComponent {
+  private specService = inject(SpecialtyService);
+  private router = inject(Router);
 
-  constructor(private specService: SpecialtyService, private router: Router) {
-    this.specialties = [];
-  }
+  private readonly specialtiesResource = rxResource({
+    stream: () => this.specService.getSpecialties(),
+  });
 
-  ngOnInit() {
-    this.specService.getSpecialties().pipe(
-      finalize(() => {
-        this.isSpecialitiesDataReceived = true;
-      })
-    ).subscribe(
-      specialties => this.specialties = specialties,
-      error => this.errorMessage = error as any);
-  }
+  // local copy so that added and deleted specialties appear without reloading the list
+  readonly specialties = linkedSignal(() => valueOrDefault(this.specialtiesResource, [] as Specialty[]));
+  readonly isSpecialitiesDataReceived = computed(() => !this.specialtiesResource.isLoading());
+  readonly isInsert = signal(false);
+
+  private readonly deleteError = signal<string | null>(null);
+  readonly errorMessage = computed(() => this.deleteError() ?? resourceErrorMessage(this.specialtiesResource));
 
   deleteSpecialty(specialty: Specialty) {
-    this.specService.deleteSpecialty(specialty.id.toString()).subscribe(
-      response => {
-        this.responseStatus = response;
-        this.specialties = this.specialties.filter(currentItem => !(currentItem.id === specialty.id));
-      },
-      error => this.errorMessage = error as any);
+    this.specService.deleteSpecialty(specialty.id.toString()).subscribe({
+      next: () => this.specialties.update(specialties => specialties.filter(currentItem => currentItem.id !== specialty.id)),
+      error: error => this.deleteError.set(String(error))
+    });
   }
 
   onNewSpecialty(newSpecialty: Specialty) {
-    this.specialties.push(newSpecialty);
+    this.specialties.update(specialties => [...specialties, newSpecialty]);
     this.showAddSpecialtyComponent();
   }
 
   showAddSpecialtyComponent() {
-    this.isInsert = !this.isInsert;
+    this.isInsert.update(isInsert => !isInsert);
   }
 
   showEditSpecialtyComponent(updatedSpecialty: Specialty) {

@@ -20,10 +20,15 @@
  * @author Vitaliy Fedoriv
  */
 
-import { Component, OnInit } from '@angular/core';
+import { Component, computed, inject, input, linkedSignal, signal } from '@angular/core';
+import { rxResource } from '@angular/core/rxjs-interop';
 import { OwnerService } from '../owner.service';
 import { Owner } from '../owner';
-import { ActivatedRoute, Router } from '@angular/router';
+import { Router } from '@angular/router';
+import { form } from '@angular/forms/signals';
+import { firstValueFrom } from 'rxjs';
+import { OwnerFormModel, ownerSchema } from '../owner-form';
+import { resourceErrorMessage, valueOrDefault } from '../../utils/resource-utils';
 
 @Component({
   selector: 'app-owner-edit',
@@ -31,37 +36,50 @@ import { ActivatedRoute, Router } from '@angular/router';
   templateUrl: './owner-edit.component.html',
   styleUrls: ['./owner-edit.component.css'],
 })
-export class OwnerEditComponent implements OnInit {
-  owner: Owner;
-  errorMessage: string; // server error message
-  ownerId: number;
-  constructor(
-    private ownerService: OwnerService,
-    private route: ActivatedRoute,
-    private router: Router
-  ) {
-    this.owner = {} as Owner;
-  }
+export class OwnerEditComponent {
+  private ownerService = inject(OwnerService);
+  private router = inject(Router);
 
-  ngOnInit() {
-    const ownerId = this.route.snapshot.params.id;
-    this.ownerService.getOwnerById(ownerId).subscribe(
-      (owner) => (this.owner = owner),
-      (error) => (this.errorMessage = error as any)
-    );
-  }
+  // route parameter, bound by the router (bindToComponentInputs)
+  readonly id = input<string>();
 
-  onSubmit(owner: Owner) {
-    const that = this;  
-    const ownerId = this.route.snapshot.params.id;
-    this.ownerService.updateOwner(ownerId , owner).subscribe(
-      (res) => this.gotoOwnerDetail(owner),
-      (error) => (this.errorMessage = error as any)
-    );
-  }
+  private readonly ownerResource = rxResource({
+    params: () => this.id(),
+    stream: ({ params }) => this.ownerService.getOwnerById(Number(params)),
+  });
+
+  private readonly emptyOwner = {} as Owner;
+
+  protected readonly owner = computed(() => valueOrDefault(this.ownerResource, this.emptyOwner));
+
+  // working copy edited through the signal form: the loaded owner is never mutated
+  private readonly ownerModel = linkedSignal<OwnerFormModel>(() => {
+    const {firstName = '', lastName = '', address = '', city = '', telephone = ''} = this.owner();
+    return {firstName, lastName, address, city, telephone};
+  });
+
+  private readonly submitError = signal<string | null>(null);
+  protected readonly errorMessage = computed(
+    () => this.submitError() ?? resourceErrorMessage(this.ownerResource)
+  );
+
+  protected readonly ownerForm = form(this.ownerModel, ownerSchema, {
+    submission: {
+      action: async () => {
+        const owner = {id: this.owner().id, ...this.ownerModel()} as Owner;
+        try {
+          await firstValueFrom(this.ownerService.updateOwner(this.id(), owner));
+          this.gotoOwnerDetail(owner);
+        } catch (error) {
+          this.submitError.set(String(error));
+        }
+        return undefined;
+      }
+    }
+  });
 
   gotoOwnerDetail(owner: Owner) {
-    this.errorMessage = null;
+    this.submitError.set(null);
     this.router.navigate(['/owners', owner.id]);
   }
 }

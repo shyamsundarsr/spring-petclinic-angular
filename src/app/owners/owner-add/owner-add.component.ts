@@ -20,10 +20,13 @@
  * @author Vitaliy Fedoriv
  */
 
-import {Component, OnInit} from '@angular/core';
+import { Component, inject, signal } from '@angular/core';
 import {OwnerService} from '../owner.service';
 import {Owner} from '../owner';
 import {Router} from '@angular/router';
+import {form} from '@angular/forms/signals';
+import {firstValueFrom} from 'rxjs';
+import {emptyOwnerForm, ownerSchema} from '../owner-form';
 
 @Component({
   selector: 'app-owner-add',
@@ -31,28 +34,26 @@ import {Router} from '@angular/router';
   templateUrl: './owner-add.component.html',
   styleUrls: ['./owner-add.component.css']
 })
-export class OwnerAddComponent implements OnInit {
+export class OwnerAddComponent {
+  private ownerService = inject(OwnerService);
+  private router = inject(Router);
 
-  owner: Owner;
-  errorMessage: string;
+  private readonly owner = signal(emptyOwnerForm());
+  protected readonly errorMessage = signal<string | null>(null);
 
-  constructor(private ownerService: OwnerService, private router: Router) {
-    this.owner = {} as Owner;
-  }
-
-  ngOnInit() {
-  }
-
-  onSubmit(owner: Owner) {
-    owner.id = null;
-    this.ownerService.addOwner(owner).subscribe(
-      newOwner => {
-        this.owner = newOwner;
-        this.gotoOwnersList();
-      },
-      error => this.errorMessage = error as any
-    );
-  }
+  protected readonly ownerForm = form(this.owner, ownerSchema, {
+    submission: {
+      action: async () => {
+        try {
+          await firstValueFrom(this.ownerService.addOwner({id: null, ...this.owner()} as Owner));
+          this.gotoOwnersList();
+        } catch (error) {
+          this.errorMessage.set(String(error));
+        }
+        return undefined;
+      }
+    }
+  });
 
   gotoOwnersList() {
     this.router.navigate(['/owners']);

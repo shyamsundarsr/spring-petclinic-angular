@@ -1,3 +1,4 @@
+import type { Mock } from 'vitest';
 /*
  *
  *  * Copyright 2017-2018 the original author or authors.
@@ -22,60 +23,88 @@
  * @author Vitaliy Fedoriv
  */
 
-import { ComponentFixture, TestBed, waitForAsync } from '@angular/core/testing';
-import {CUSTOM_ELEMENTS_SCHEMA} from '@angular/core';
-import {Specialty} from '../specialty';
-import {SpecialtyEditComponent} from './specialty-edit.component';
-import {SpecialtyService} from '../specialty.service';
-import {FormsModule} from '@angular/forms';
-import {ActivatedRoute, Router} from '@angular/router';
-import {ActivatedRouteStub, RouterStub} from '../../testing/router-stubs';
-import {Observable, of} from 'rxjs';
-import Spy = jasmine.Spy;
+import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { CUSTOM_ELEMENTS_SCHEMA } from '@angular/core';
+import { Specialty } from '../specialty';
+import { SpecialtyEditComponent } from './specialty-edit.component';
+import { SpecialtyService } from '../specialty.service';
+import { FormField, FormRoot } from '@angular/forms/signals';
+import { Router } from '@angular/router';
+import { RouterStub } from '../../testing/router-stubs';
+import { setValue, submitButton, submitForm } from '../../testing/form-utils';
+import { Observable, of } from 'rxjs';
+type Spy = Mock;
 
 class SpecialityServiceStub {
-  getSpecialtyById(specId: string): Observable<Specialty> {
-    return of();
-  }
+    getSpecialtyById(specId: string): Observable<Specialty> {
+        return of();
+    }
+    updateSpecialty(specId: string, specialty: Specialty): Observable<Specialty> {
+        return of(specialty);
+    }
 }
 
 describe('SpecialtyEditComponent', () => {
-  let component: SpecialtyEditComponent;
-  let fixture: ComponentFixture<SpecialtyEditComponent>;
-  let specialtyService: SpecialtyService;
-  let spy: Spy;
-  let testSpecialty: Specialty;
+    let component: SpecialtyEditComponent;
+    let fixture: ComponentFixture<SpecialtyEditComponent>;
+    let specialtyService: SpecialtyService;
+    let spy: Spy;
+    let testSpecialty: Specialty;
 
-  beforeEach(waitForAsync(() => {
-    TestBed.configureTestingModule({
-      declarations: [SpecialtyEditComponent],
-      schemas: [CUSTOM_ELEMENTS_SCHEMA],
-      imports: [FormsModule],
-      providers: [
-        {provide: SpecialtyService, useClass: SpecialityServiceStub},
-        {provide: Router, useClass: RouterStub},
-        {provide: ActivatedRoute, useClass: ActivatedRouteStub}
-      ]
-    })
-      .compileComponents();
-  }));
+    beforeEach(async () => {
+        await TestBed.configureTestingModule({
+            declarations: [SpecialtyEditComponent],
+            schemas: [CUSTOM_ELEMENTS_SCHEMA],
+            imports: [FormField, FormRoot],
+            providers: [
+                { provide: SpecialtyService, useClass: SpecialityServiceStub },
+                { provide: Router, useClass: RouterStub }
+            ]
+        })
+            .compileComponents();
+    });
 
-  beforeEach(() => {
-    fixture = TestBed.createComponent(SpecialtyEditComponent);
-    component = fixture.componentInstance;
-    testSpecialty = {
-      id: 1,
-      name: 'test'
-    };
+    beforeEach(() => {
+        fixture = TestBed.createComponent(SpecialtyEditComponent);
+        fixture.componentRef.setInput('id', 1);
+        component = fixture.componentInstance;
+        testSpecialty = {
+            id: 1,
+            name: 'test'
+        };
 
-    specialtyService = fixture.debugElement.injector.get(SpecialtyService);
-    spy = spyOn(specialtyService, 'getSpecialtyById')
-      .and.returnValue(of(testSpecialty));
+        specialtyService = fixture.debugElement.injector.get(SpecialtyService);
+        spy = vi.spyOn(specialtyService, 'getSpecialtyById').mockReturnValue(of(testSpecialty));
 
-    fixture.detectChanges();
-  });
+        fixture.detectChanges();
+    });
 
-  it('should create SpecialtyEditComponent', () => {
-    expect(component).toBeTruthy();
-  });
+    it('should create SpecialtyEditComponent', () => {
+        expect(component).toBeTruthy();
+    });
+
+    it('should display the loaded specialty', async () => {
+        await fixture.whenStable();
+        expect(fixture.nativeElement.querySelector('#name').value).toBe('test');
+    });
+
+    it('should update the specialty and go back to the list', async () => {
+        const updateSpy = vi.spyOn(specialtyService, 'updateSpecialty').mockReturnValue(of(testSpecialty));
+        const router = TestBed.inject(Router);
+        vi.spyOn(router, 'navigate');
+        await fixture.whenStable();
+        await setValue(fixture, '#name', 'surgery');
+
+        await submitForm(fixture);
+
+        expect(updateSpy).toHaveBeenCalledWith('1', { id: 1, name: 'surgery' });
+        expect(router.navigate).toHaveBeenCalledWith(['/specialties']);
+    });
+
+    it('should disable the submit button when the name is empty', async () => {
+        await fixture.whenStable();
+        await setValue(fixture, '#name', '');
+        expect(fixture.nativeElement.textContent).toContain('Name is required');
+        expect(submitButton(fixture).disabled).toBe(true);
+    });
 });

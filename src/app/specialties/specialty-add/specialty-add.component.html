@@ -1,23 +1,29 @@
 <div class="container-fluid">
   <div class="container xd-container">
     <h2>New Specialty</h2>
-    <form class="form-horizontal" (ngSubmit)="onSubmit(specialityForm.value)" #specialityForm="ngForm">
-      <div class="form-group" hidden="true">
-        <input type="text" hidden="true" class="form-control" id="id" [(ngModel)]="speciality.id" name="id" />
-      </div>
-
-      <div class="form-group has-feedback"   [class.has-success]="specialityName.dirty && specialityName.valid" [class.has-error]="specialityName.dirty &&  !specialityName.valid">
-        <div class="form-group">
-          <label class="col-sm-1 control-label">Name</label>
-          <div class="col-sm-6">
-            <input id="name" name="name" class="form-control"  minlength="1" maxlength="80" pattern="^[A-Za-z0-9].{0,79}$" required type="text" [(ngModel)]="speciality.name" #specialityName="ngModel" />
-            <span class="glyphicon form-control-feedback" [class.glyphicon-ok]="specialityName.valid" [class.glyphicon-remove]="!specialityName.valid" aria-hidden="true"></span>
-            <span class="help-block" *ngIf="specialityName.dirty && specialityName.hasError('maxlength')">Name may be only 80 characters long</span>
-            <span class="help-block" *ngIf="specialityName.dirty && specialityName.hasError('minlength')">Name must be at least 1 characters long</span>
-            <span class="help-block" *ngIf="specialityName.dirty && specialityName.hasError('pattern')">Name must begin with a letter or digit</span>
-            <span class="help-block" *ngIf="specialityForm.submitted || specialityName.dirty && specialityName.hasError('required')">Name is required</span>
-          </div>
-          <button class="btn btn-default" type="submit" [disabled]="!specialityForm.valid">Save</button>
+    @if (errorMessage()) {
+      <div class="alert alert-danger">{{ errorMessage() }}</div>
+    }
+    <form [formRoot]="specialityForm">
+      <div class="row mb-3">
+        <label for="name" class="col-sm-2 col-form-label">Name</label>
+        <div class="col-sm-8">
+          <input id="name" class="form-control" type="text" [formField]="specialityForm.name" [class.is-valid]="specialityForm.name().dirty() && specialityForm.name().valid()" [class.is-invalid]="specialityForm.name().dirty() && specialityForm.name().invalid()" />
+          @if (specialityForm.name().dirty()) {
+            @for (error of specialityForm.name().errors(); track error.kind) {
+              <div class="invalid-feedback">
+                @switch (error.kind) {
+                  @case ('maxLength') { Name may be only 80 characters long }
+                  @case ('minLength') { Name must be at least 1 character long }
+                  @case ('pattern') { Name must begin with a letter or digit }
+                  @case ('required') { Name is required }
+                }
+              </div>
+            }
+          }
+        </div>
+        <div class="col-sm-2 mt-2 mt-sm-0">
+          <button class="btn btn-secondary" type="submit" [disabled]="specialityForm().invalid()">Save</button>
         </div>
       </div>
     </form>

@@ -20,11 +20,12 @@
  * @author Vitaliy Fedoriv
  */
 
-import {Component, OnInit} from '@angular/core';
+import {Component, computed, inject, signal} from '@angular/core';
+import {rxResource} from '@angular/core/rxjs-interop';
 import {OwnerService} from '../owner.service';
 import {Owner} from '../owner';
 import {Router} from '@angular/router';
-import { finalize } from 'rxjs/operators';
+import {form, maxLength} from '@angular/forms/signals';
 
 @Component({
   selector: 'app-owner-list',
@@ -32,26 +33,33 @@ import { finalize } from 'rxjs/operators';
   templateUrl: './owner-list.component.html',
   styleUrls: ['./owner-list.component.css']
 })
-export class OwnerListComponent implements OnInit {
-  errorMessage: string;
-  lastName: string;
-  owners: Owner[];
-  listOfOwnersWithLastName: Owner[];
-  isOwnersDataReceived: boolean = false;
+export class OwnerListComponent {
+  private router = inject(Router);
+  private ownerService = inject(OwnerService);
 
-  constructor(private router: Router, private ownerService: OwnerService) {
+  private readonly search = signal({lastName: ''});
+  // search term applied by the "Find Owner" button: changing it reloads the owners
+  private readonly searchTerm = signal('');
 
-  }
+  private readonly ownersResource = rxResource({
+    params: () => this.searchTerm(),
+    stream: ({params}) => params === ''
+      ? this.ownerService.getOwners()
+      : this.ownerService.searchOwners(params)
+  });
 
-  ngOnInit() {
-    this.ownerService.getOwners().pipe(
-      finalize(() => {
-        this.isOwnersDataReceived = true;
-      })
-    ).subscribe(
-      owners => this.owners = owners,
-      error => this.errorMessage = error as any);
-  }
+  protected readonly searchForm = form(this.search, path => maxLength(path.lastName, 80), {
+    submission: {
+      action: async () => {
+        this.searchByLastName(this.search().lastName);
+        return undefined;
+      }
+    }
+  });
+
+  protected readonly owners = computed(() =>
+    this.ownersResource.hasValue() ? this.ownersResource.value() : null);
+  protected readonly isOwnersDataReceived = computed(() => !this.ownersResource.isLoading());
 
   onSelect(owner: Owner) {
     this.router.navigate(['/owners', owner.id]);
@@ -61,35 +69,11 @@ export class OwnerListComponent implements OnInit {
     this.router.navigate(['/owners/add']);
   }
 
-  searchByLastName(lastName: string)
-  {
-      console.log('inside search by last name starting with ' + (lastName));
-      if (lastName === '')
-      {
-      this.ownerService.getOwners()
-      .subscribe(
-            (owners) => {
-             this.owners = owners;
-            });
-      }
-      if (lastName !== '')
-      {
-      this.ownerService.searchOwners(lastName)
-      .subscribe(
-      (owners) => {
-
-       this.owners = owners;
-       console.log('this.owners ' + this.owners);
-
-       },
-       (error) =>
-       {
-         this.owners = null;
-       }
-      );
-
-      }
+  searchByLastName(lastName: string) {
+    if (lastName === this.searchTerm()) {
+      this.ownersResource.reload();
+    } else {
+      this.searchTerm.set(lastName);
+    }
   }
-
-
 }

@@ -1,114 +1,82 @@
-/*
- *
- *  * Copyright 2016-2017 the original author or authors.
- *  *
- *  * Licensed under the Apache License, Version 2.0 (the "License");
- *  * you may not use this file except in compliance with the License.
- *  * You may obtain a copy of the License at
- *  *
- *  *      http://www.apache.org/licenses/LICENSE-2.0
- *  *
- *  * Unless required by applicable law or agreed to in writing, software
- *  * distributed under the License is distributed on an "AS IS" BASIS,
- *  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- *  * See the License for the specific language governing permissions and
- *  * limitations under the License.
- *
- */
-
-/* tslint:disable:no-unused-variable */
-
-/**
- * @author Vitaliy Fedoriv
- */
-
-import { ComponentFixture, TestBed, waitForAsync } from '@angular/core/testing';
-import {CUSTOM_ELEMENTS_SCHEMA} from '@angular/core';
-
-import {PetEditComponent} from './pet-edit.component';
-import {FormsModule} from '@angular/forms';
-import {PetService} from '../pet.service';
-import {OwnerService} from '../../owners/owner.service';
-import {PetTypeService} from '../../pettypes/pettype.service';
-import {ActivatedRoute, Router} from '@angular/router';
-import {ActivatedRouteStub, RouterStub} from '../../testing/router-stubs';
-import {Pet} from '../pet';
-import {Observable, of} from 'rxjs';
+import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { CUSTOM_ELEMENTS_SCHEMA } from '@angular/core';
+import { FormField, FormRoot } from '@angular/forms/signals';
+import { MatMomentDateModule } from '@angular/material-moment-adapter';
 import { MatDatepickerModule } from '@angular/material/datepicker';
-import {MatMomentDateModule} from '@angular/material-moment-adapter';
-import {PetType} from '../../pettypes/pettype';
-import Spy = jasmine.Spy;
+import { Router } from '@angular/router';
+import { of } from 'rxjs';
 
-class OwnerServiceStub {
-
-}
-
-class PetServiceStub {
-  updatePet(petId: string, pet: Pet): Observable<Pet> {
-    return of();
-  }
-  getPetById(petId: string): Observable<Pet> {
-    return of();
-  }
-}
-
-class PetTypeServiceStub {
-  getPetTypes(): Observable<PetType[]> {
-    return of();
-  }
-}
+import { PetEditComponent } from './pet-edit.component';
+import { PetService } from '../pet.service';
+import { OwnerService } from '../../owners/owner.service';
+import { PetTypeService } from '../../pettypes/pettype.service';
+import { RouterStub } from '../../testing/router-stubs';
+import { setValue, submitButton, submitForm } from '../../testing/form-utils';
 
 describe('PetEditComponent', () => {
-  let component: PetEditComponent;
-  let fixture: ComponentFixture<PetEditComponent>;
-  let petService: PetService;
-  let testPet: Pet;
-  let spy: Spy;
+    let component: PetEditComponent;
+    let fixture: ComponentFixture<PetEditComponent>;
+    let router: Router;
+    const owner = { id: 1, firstName: 'George', lastName: 'Franklin' };
+    const cat = { id: 1, name: 'cat' };
+    const dog = { id: 2, name: 'dog' };
+    const pet = { id: 7, name: 'Leo', birthDate: '2010-09-07', type: cat, ownerId: 1 };
+    const petService = { getPetById: () => of(pet), updatePet: vi.fn(() => of({})) };
 
-  beforeEach(waitForAsync(() => {
-    TestBed.configureTestingModule({
-      declarations: [PetEditComponent],
-      schemas: [CUSTOM_ELEMENTS_SCHEMA],
-      imports: [FormsModule, MatDatepickerModule, MatMomentDateModule],
-      providers: [
-        {provide: PetService, useClass: PetServiceStub},
-        {provide: OwnerService, useClass: OwnerServiceStub},
-        {provide: PetTypeService, useClass: PetTypeServiceStub},
-        {provide: Router, useClass: RouterStub},
-        {provide: ActivatedRoute, useClass: ActivatedRouteStub}
-      ]
-    })
-      .compileComponents();
-  }));
+    beforeEach(async () => {
+        petService.updatePet.mockClear();
+        await TestBed.configureTestingModule({
+            declarations: [PetEditComponent],
+            schemas: [CUSTOM_ELEMENTS_SCHEMA],
+            imports: [FormField, FormRoot, MatDatepickerModule, MatMomentDateModule],
+            providers: [
+                { provide: PetService, useValue: petService },
+                { provide: OwnerService, useValue: { getOwnerById: () => of(owner) } },
+                { provide: PetTypeService, useValue: { getPetTypes: () => of([cat, dog]) } },
+                { provide: Router, useClass: RouterStub }
+            ]
+        })
+            .compileComponents();
 
-  beforeEach(() => {
-    fixture = TestBed.createComponent(PetEditComponent);
-    component = fixture.componentInstance;
-    testPet = {
-      id: 1,
-      name: 'Leo',
-      birthDate: '2010-09-07',
-      type: {id: 1, name: 'cat'},
-      ownerId: 1,
-      owner: {
-        id: 1,
-        firstName: 'George',
-        lastName: 'Franklin',
-        address: '110 W. Liberty St.',
-        city: 'Madison',
-        telephone: '6085551023',
-        pets: null
-      },
-      visits: null
-    };
-    petService = fixture.debugElement.injector.get(PetService);
-    spy = spyOn(petService, 'updatePet')
-      .and.returnValue(of(testPet));
+        fixture = TestBed.createComponent(PetEditComponent);
+        fixture.componentRef.setInput('id', 7);
+        component = fixture.componentInstance;
+        router = TestBed.inject(Router);
+        vi.spyOn(router, 'navigate');
+        fixture.detectChanges();
+        await fixture.whenStable();
+    });
 
-    fixture.detectChanges();
-  });
+    it('should create PetEditComponent', () => {
+        expect(component).toBeTruthy();
+    });
 
-  it('should create PetEditComponent', () => {
-    expect(component).toBeTruthy();
-  });
+    it('should display the loaded pet', () => {
+        expect(fixture.nativeElement.querySelector('#name').value).toBe('Leo');
+        expect(fixture.nativeElement.querySelector('#birthDate').value).toBe('9/7/2010');
+        expect(fixture.nativeElement.querySelector('#typeId').value).toBe('1');
+        expect(submitButton(fixture).disabled).toBe(false);
+    });
+
+    it('should update the pet and go back to the owner', async () => {
+        await setValue(fixture, '#name', 'Leon');
+        await setValue(fixture, '#typeId', '2');
+
+        await submitForm(fixture);
+
+        expect(petService.updatePet).toHaveBeenCalledWith('7', {
+            id: 7,
+            owner: undefined,
+            name: 'Leon',
+            birthDate: '2010-09-07',
+            type: dog
+        });
+        expect(router.navigate).toHaveBeenCalledWith(['/owners', 1]);
+    });
+
+    it('should disable the submit button when the name is empty', async () => {
+        await setValue(fixture, '#name', '');
+        expect(fixture.nativeElement.textContent).toContain('Name is required');
+        expect(submitButton(fixture).disabled).toBe(true);
+    });
 });

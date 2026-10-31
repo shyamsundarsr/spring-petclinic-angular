@@ -1,59 +1,92 @@
-import { ComponentFixture, TestBed, waitForAsync } from '@angular/core/testing';
+import type { Mock } from 'vitest';
+import { ComponentFixture, TestBed } from '@angular/core/testing';
 
-import {PettypeEditComponent} from './pettype-edit.component';
-import {PetTypeService} from '../pettype.service';
-import {PetType} from '../pettype';
-import {CUSTOM_ELEMENTS_SCHEMA} from '@angular/core';
-import {ActivatedRoute, Router} from '@angular/router';
-import {ActivatedRouteStub, RouterStub} from '../../testing/router-stubs';
-import {FormsModule} from '@angular/forms';
-import {Observable, of} from 'rxjs';
-import Spy = jasmine.Spy;
-
-class PetTypeServiceStub {
-  getPetTypeById(typeId: string): Observable<PetType> {
-    return of();
-  }
-}
-
+import { PettypeEditComponent } from './pettype-edit.component';
+import { PetTypeService } from '../pettype.service';
+import { PetType } from '../pettype';
+import { CUSTOM_ELEMENTS_SCHEMA } from '@angular/core';
+import { Router } from '@angular/router';
+import { RouterStub } from '../../testing/router-stubs';
+import { FormField, FormRoot } from '@angular/forms/signals';
+import { of } from 'rxjs';
+type Spy = Mock;
 
 describe('PettypeEditComponent', () => {
-  let component: PettypeEditComponent;
-  let fixture: ComponentFixture<PettypeEditComponent>;
-  let pettypeService: PetTypeService;
-  let spy: Spy;
-  let testPettype: PetType;
+    let component: PettypeEditComponent;
+    let fixture: ComponentFixture<PettypeEditComponent>;
+    let pettypeService: PetTypeService;
+    let getSpy: Spy;
+    let updateSpy: Spy;
+    let router: Router;
+    let testPettype: PetType;
 
-  beforeEach(waitForAsync(() => {
-    TestBed.configureTestingModule({
-      declarations: [ PettypeEditComponent ],
-      schemas: [CUSTOM_ELEMENTS_SCHEMA],
-      imports: [FormsModule],
-      providers: [
-        {provide: PetTypeService, useClass: PetTypeServiceStub},
-        {provide: Router, useClass: RouterStub},
-        {provide: ActivatedRoute, useClass: ActivatedRouteStub}
-      ]
-    })
-      .compileComponents();
-  }));
-
-  beforeEach(() => {
-    fixture = TestBed.createComponent(PettypeEditComponent);
-    component = fixture.componentInstance;
-    testPettype = {
-      id: 1,
-      name: 'test'
+    const nameInput = () => fixture.nativeElement.querySelector('#name') as HTMLInputElement;
+    const typeName = async (value: string) => {
+        nameInput().value = value;
+        nameInput().dispatchEvent(new Event('input'));
+        await fixture.whenStable();
     };
 
-    pettypeService = fixture.debugElement.injector.get(PetTypeService);
-    spy = spyOn(pettypeService, 'getPetTypeById')
-      .and.returnValue(of(testPettype));
+    beforeEach(async () => {
+        await TestBed.configureTestingModule({
+            declarations: [PettypeEditComponent],
+            schemas: [CUSTOM_ELEMENTS_SCHEMA],
+            imports: [FormField, FormRoot],
+            providers: [
+                { provide: PetTypeService, useValue: { getPetTypeById: () => of(), updatePetType: () => of() } },
+                { provide: Router, useClass: RouterStub }
+            ]
+        })
+            .compileComponents();
+    });
 
-    fixture.detectChanges();
-  });
+    beforeEach(async () => {
+        fixture = TestBed.createComponent(PettypeEditComponent);
+        fixture.componentRef.setInput('id', 1);
+        component = fixture.componentInstance;
+        testPettype = {
+            id: 1,
+            name: 'test'
+        };
 
-  it('should create PettypeEditComponent', () => {
-    expect(component).toBeTruthy();
-  });
+        pettypeService = TestBed.inject(PetTypeService);
+        router = TestBed.inject(Router);
+        vi.spyOn(router, 'navigate');
+        getSpy = vi.spyOn(pettypeService, 'getPetTypeById').mockReturnValue(of(testPettype));
+        updateSpy = vi.spyOn(pettypeService, 'updatePetType').mockReturnValue(of(testPettype));
+
+        await fixture.whenStable();
+    });
+
+    it('should create PettypeEditComponent', () => {
+        expect(component).toBeTruthy();
+    });
+
+    it('should display the loaded name', () => {
+        expect(nameInput().value).toBe('test');
+    });
+
+    it('should show an error and disable update when the name is empty', async () => {
+        await typeName('');
+        expect(fixture.nativeElement.textContent).toContain('Name is required');
+        expect(fixture.nativeElement.querySelector('button[type=submit]').disabled).toBe(true);
+    });
+
+    it('should reject a name that does not begin with a letter or digit', async () => {
+        await typeName('-dog');
+        expect(fixture.nativeElement.textContent).toContain('Name must begin with a letter or digit');
+    });
+
+    it('should reject a name longer than 80 characters', async () => {
+        await typeName('a'.repeat(81));
+        expect(fixture.nativeElement.textContent).toContain('Name may be only 80 characters long');
+    });
+
+    it('should update the pet type and go back on submit', async () => {
+        await typeName('dog');
+        fixture.nativeElement.querySelector('form').dispatchEvent(new Event('submit'));
+        await fixture.whenStable();
+        expect(updateSpy).toHaveBeenCalledWith('1', { id: 1, name: 'dog' });
+        expect(router.navigate).toHaveBeenCalledWith(['/pettypes']);
+    });
 });

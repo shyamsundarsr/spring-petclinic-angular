@@ -1,4 +1,7 @@
-import {Component, EventEmitter, OnInit, Output} from '@angular/core';
+import { Component, inject, output, signal } from '@angular/core';
+import { form } from '@angular/forms/signals';
+import { pettypeSchema } from '../pettype-form';
+import { firstValueFrom } from 'rxjs';
 import {PetType} from '../pettype';
 import {PetTypeService} from '../pettype.service';
 
@@ -8,27 +11,30 @@ import {PetTypeService} from '../pettype.service';
   templateUrl: './pettype-add.component.html',
   styleUrls: ['./pettype-add.component.css']
 })
-export class PettypeAddComponent implements OnInit {
-  pettype: PetType;
-  errorMessage: string;
-  @Output() newPetType = new EventEmitter<PetType>();
+export class PettypeAddComponent {
+  private pettypeService = inject(PetTypeService);
 
-  constructor(private pettypeService: PetTypeService) {
-    this.pettype = {} as PetType;
-  }
+  private readonly pettype = signal({ name: '' });
+  readonly errorMessage = signal<string | null>(null);
+  readonly newPetType = output<PetType>();
 
-  ngOnInit() {
-  }
-
-  onSubmit(pettype: PetType) {
-    pettype.id = null;
-    this.pettypeService.addPetType(pettype).subscribe(
-      newPettype => {
-        this.pettype = newPettype;
-        this.newPetType.emit(this.pettype);
-      },
-      error => this.errorMessage = error as any
-    );
-  }
-
+  protected readonly pettypeForm = form(
+    this.pettype,
+    pettypeSchema,
+    {
+      submission: {
+        action: async () => {
+          try {
+            const newPettype = await firstValueFrom(
+              this.pettypeService.addPetType({ id: null, name: this.pettype().name })
+            );
+            this.newPetType.emit(newPettype);
+          } catch (error) {
+            this.errorMessage.set(String(error));
+          }
+          return undefined;
+        }
+      }
+    }
+  );
 }

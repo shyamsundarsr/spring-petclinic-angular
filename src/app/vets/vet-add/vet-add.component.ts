@@ -20,12 +20,17 @@
  * @author Vitaliy Fedoriv
  */
 
-import {Component, OnInit} from '@angular/core';
+import { Component, computed, inject, signal } from '@angular/core';
+import { rxResource } from '@angular/core/rxjs-interop';
 import {Specialty} from '../../specialties/specialty';
 import {SpecialtyService} from 'app/specialties/specialty.service';
 import {Vet} from '../vet';
 import {Router} from '@angular/router';
+import {form} from '@angular/forms/signals';
+import {firstValueFrom} from 'rxjs';
+import {vetNamesSchema} from '../vet-form';
 import {VetService} from '../vet.service';
+import {resourceErrorMessage, valueOrDefault} from '../../utils/resource-utils';
 
 @Component({
   selector: 'app-vet-add',
@@ -33,39 +38,39 @@ import {VetService} from '../vet.service';
   templateUrl: './vet-add.component.html',
   styleUrls: ['./vet-add.component.css']
 })
-export class VetAddComponent implements OnInit {
-  vet: Vet;
-  specialtiesList: Specialty[];
-  selectedSpecialty: Specialty;
-  errorMessage: string;
+export class VetAddComponent {
+  private specialtyService = inject(SpecialtyService);
+  private vetService = inject(VetService);
+  private router = inject(Router);
 
-  constructor(private specialtyService: SpecialtyService, private vetService: VetService, private router: Router) {
-    this.vet = {} as Vet;
-    this.selectedSpecialty = {} as Specialty;
-    this.specialtiesList = [];
-  }
+  private readonly specialtiesResource = rxResource({
+    stream: () => this.specialtyService.getSpecialties(),
+  });
 
-  ngOnInit() {
-    this.specialtyService.getSpecialties().subscribe(
-      specialties => this.specialtiesList = specialties,
-      error => this.errorMessage = error as any
-    );
-  }
+  // the specialty is the id of the selected one, as the native select only handles strings
+  private readonly vet = signal({ firstName: '', lastName: '', specialtyId: '' });
+  readonly specialtiesList = computed(() => valueOrDefault(this.specialtiesResource, [] as Specialty[]));
+  private readonly submitError = signal<string | null>(null);
+  readonly errorMessage = computed(
+    () => this.submitError() ?? resourceErrorMessage(this.specialtiesResource)
+  );
 
-  onSubmit(vet: Vet) {
-    vet.id = null;
-    vet.specialties = [];
-    if (this.selectedSpecialty.id !== undefined) {
-      vet.specialties.push(this.selectedSpecialty);
+  protected readonly vetForm = form(this.vet, vetNamesSchema(1), {
+    submission: {
+      action: async () => {
+        const { firstName, lastName, specialtyId } = this.vet();
+        const specialty = this.specialtiesList().find(spec => String(spec.id) === specialtyId);
+        const vet = { id: null, firstName, lastName, specialties: specialty ? [specialty] : [] } as Vet;
+        try {
+          await firstValueFrom(this.vetService.addVet(vet));
+          this.gotoVetList();
+        } catch (error) {
+          this.submitError.set(String(error));
+        }
+        return undefined;
+      }
     }
-    this.vetService.addVet(vet).subscribe(
-      newVet => {
-        this.vet = newVet;
-        this.gotoVetList();
-      },
-      error => this.errorMessage = error as any
-    );
-  }
+  });
 
   gotoVetList() {
     this.router.navigate(['/vets']);

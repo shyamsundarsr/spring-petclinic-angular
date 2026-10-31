@@ -20,10 +20,15 @@
  * @author Vitaliy Fedoriv
  */
 
-import {Component, OnInit} from '@angular/core';
+import { Component, computed, inject, input, linkedSignal, signal } from '@angular/core';
+import { rxResource } from '@angular/core/rxjs-interop';
 import {Specialty} from '../specialty';
 import {SpecialtyService} from '../specialty.service';
-import {ActivatedRoute, Router} from '@angular/router';
+import {Router} from '@angular/router';
+import {form} from '@angular/forms/signals';
+import {specialtySchema} from '../specialty-form';
+import {firstValueFrom} from 'rxjs';
+import {resourceErrorMessage, valueOrDefault} from '../../utils/resource-utils';
 
 @Component({
   selector: 'app-specialty-edit',
@@ -31,29 +36,46 @@ import {ActivatedRoute, Router} from '@angular/router';
   templateUrl: './specialty-edit.component.html',
   styleUrls: ['./specialty-edit.component.css']
 })
-export class SpecialtyEditComponent implements OnInit {
-  specialty: Specialty;
-  errorMessage: string;
+export class SpecialtyEditComponent {
+  private specialtyService = inject(SpecialtyService);
+  private router = inject(Router);
 
-  constructor(private specialtyService: SpecialtyService, private route: ActivatedRoute, private router: Router) {
-    this.specialty = {} as Specialty;
-  }
+  // route parameter, bound by the router (bindToComponentInputs)
+  readonly id = input<string>();
 
-  ngOnInit() {
-    const specId = this.route.snapshot.params.id;
-    this.specialtyService.getSpecialtyById(specId).subscribe(
-      specialty => this.specialty = specialty,
-      error => this.errorMessage = error as any);
-  }
+  private readonly specialtyResource = rxResource({
+    params: () => this.id(),
+    stream: ({ params }) => this.specialtyService.getSpecialtyById(params),
+  });
 
-  onSubmit(specialty: Specialty) {
-    this.specialtyService.updateSpecialty(specialty.id.toString(), specialty).subscribe(
-      res => {
-        console.log('update success');
-        this.onBack();
-      },
-      error => this.errorMessage = error as any);
- }
+  private readonly emptySpecialty = { name: '' } as Specialty;
+
+  // working copy edited through the signal form: the loaded specialty is never mutated
+  private readonly specialty = linkedSignal(() => ({ ...valueOrDefault(this.specialtyResource, this.emptySpecialty) }));
+
+  private readonly submitError = signal<string | null>(null);
+  protected readonly errorMessage = computed(
+    () => this.submitError() ?? resourceErrorMessage(this.specialtyResource)
+  );
+
+  protected readonly specialtyForm = form(
+    this.specialty,
+    specialtySchema,
+    {
+      submission: {
+        action: async () => {
+          const specialty = this.specialty();
+          try {
+            await firstValueFrom(this.specialtyService.updateSpecialty(specialty.id.toString(), specialty));
+            this.onBack();
+          } catch (error) {
+            this.submitError.set(String(error));
+          }
+          return undefined;
+        }
+      }
+    }
+  );
 
   onBack() {
     this.router.navigate(['/specialties']);

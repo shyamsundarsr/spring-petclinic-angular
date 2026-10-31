@@ -21,8 +21,7 @@
  */
 
 import {BrowserModule} from '@angular/platform-browser';
-import {NgModule} from '@angular/core';
-import {FormsModule} from '@angular/forms';
+import {NgModule, provideZonelessChangeDetection} from '@angular/core';
 import {HttpClientModule} from '@angular/common/http';
 import {AppComponent} from './app.component';
 import {AppRoutingModule} from './app-routing.module';
@@ -43,7 +42,6 @@ import {BrowserAnimationsModule} from '@angular/platform-browser/animations';
   ],
   imports: [
     BrowserModule,
-    FormsModule,
     HttpClientModule,
     OwnersModule,
     PetsModule,
@@ -56,6 +54,7 @@ import {BrowserAnimationsModule} from '@angular/platform-browser/animations';
     AppRoutingModule
   ],
   providers: [
+    provideZonelessChangeDetection(),
     HttpErrorHandler,
   ],
   bootstrap: [AppComponent]

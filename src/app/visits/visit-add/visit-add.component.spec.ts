@@ -1,111 +1,79 @@
-/*
- *
- *  * Copyright 2016-2017 the original author or authors.
- *  *
- *  * Licensed under the Apache License, Version 2.0 (the "License");
- *  * you may not use this file except in compliance with the License.
- *  * You may obtain a copy of the License at
- *  *
- *  *      http://www.apache.org/licenses/LICENSE-2.0
- *  *
- *  * Unless required by applicable law or agreed to in writing, software
- *  * distributed under the License is distributed on an "AS IS" BASIS,
- *  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- *  * See the License for the specific language governing permissions and
- *  * limitations under the License.
- *
- */
-
-/* tslint:disable:no-unused-variable */
-
-/**
- * @author Vitaliy Fedoriv
- */
-
-import { ComponentFixture, TestBed, waitForAsync } from '@angular/core/testing';
-import {CUSTOM_ELEMENTS_SCHEMA} from '@angular/core';
-
-import {VisitAddComponent} from './visit-add.component';
-import {FormsModule} from '@angular/forms';
-import {VisitService} from '../visit.service';
-import {PetService} from '../../pets/pet.service';
-import {ActivatedRoute, Router} from '@angular/router';
-import {ActivatedRouteStub, RouterStub} from '../../testing/router-stubs';
-import {Pet} from '../../pets/pet';
-import {Observable, of} from 'rxjs';
-import {MatMomentDateModule} from '@angular/material-moment-adapter';
+import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { CUSTOM_ELEMENTS_SCHEMA } from '@angular/core';
+import { FormField, FormRoot } from '@angular/forms/signals';
+import { MatMomentDateModule } from '@angular/material-moment-adapter';
 import { MatDatepickerModule } from '@angular/material/datepicker';
-import Spy = jasmine.Spy;
-import {OwnerService} from '../../owners/owner.service';
+import { Router } from '@angular/router';
+import { of } from 'rxjs';
 
-class PetServiceStub {
-  addPet(pet: Pet): Observable<Pet> {
-    return of();
-  }
-  getPetById(petId: string): Observable<Pet> {
-    return of();
-  }
-}
-
-class OwnerServiceStub {
-}
-
-class VisitServiceStub {
-}
+import { VisitAddComponent } from './visit-add.component';
+import { VisitService } from '../visit.service';
+import { PetService } from '../../pets/pet.service';
+import { OwnerService } from '../../owners/owner.service';
+import { RouterStub } from '../../testing/router-stubs';
+import { setValue, submitButton, submitForm } from '../../testing/form-utils';
 
 describe('VisitAddComponent', () => {
-  let component: VisitAddComponent;
-  let fixture: ComponentFixture<VisitAddComponent>;
-  let petService: PetService;
-  let visitService: VisitService;
-  let testPet: Pet;
-  let spy: Spy;
+    let component: VisitAddComponent;
+    let fixture: ComponentFixture<VisitAddComponent>;
+    let router: Router;
+    const pet = { id: 1, name: 'Leo', ownerId: 1, visits: [] };
+    const visitService = { addVisit: vi.fn(() => of({})) };
 
-  beforeEach(waitForAsync(() => {
-    TestBed.configureTestingModule({
-      declarations: [VisitAddComponent],
-      schemas: [CUSTOM_ELEMENTS_SCHEMA],
-      imports: [FormsModule, MatDatepickerModule, MatMomentDateModule],
-      providers: [
-        {provide: PetService, useClass: PetServiceStub},
-        {provide: VisitService, useClass: VisitServiceStub},
-        {provide: OwnerService, useClass: OwnerServiceStub},
-        {provide: Router, useClass: RouterStub},
-        {provide: ActivatedRoute, useClass: ActivatedRouteStub}
-      ]
-    })
-      .compileComponents();
-  }));
+    beforeEach(async () => {
+        visitService.addVisit.mockClear();
+        await TestBed.configureTestingModule({
+            declarations: [VisitAddComponent],
+            schemas: [CUSTOM_ELEMENTS_SCHEMA],
+            imports: [FormField, FormRoot, MatDatepickerModule, MatMomentDateModule],
+            providers: [
+                { provide: PetService, useValue: { getPetById: () => of(pet) } },
+                { provide: VisitService, useValue: visitService },
+                { provide: OwnerService, useValue: { getOwnerById: () => of({ id: 5 }) } },
+                { provide: Router, useClass: RouterStub }
+            ]
+        })
+            .compileComponents();
 
-  beforeEach(() => {
-    fixture = TestBed.createComponent(VisitAddComponent);
-    component = fixture.componentInstance;
-    testPet = {
-      id: 1,
-      name: 'Leo',
-      birthDate: '2010-09-07',
-      type: {id: 1, name: 'cat'},
-      ownerId: 1,
-      owner: {
-        id: 1,
-        firstName: 'George',
-        lastName: 'Franklin',
-        address: '110 W. Liberty St.',
-        city: 'Madison',
-        telephone: '6085551023',
-        pets: null
-      },
-      visits: null
-    };
-    petService = fixture.debugElement.injector.get(PetService);
-    visitService = fixture.debugElement.injector.get(VisitService);
-    spy = spyOn(petService, 'addPet')
-      .and.returnValue(of(testPet));
+        fixture = TestBed.createComponent(VisitAddComponent);
+        fixture.componentRef.setInput('id', 1);
+        component = fixture.componentInstance;
+        router = TestBed.inject(Router);
+        vi.spyOn(router, 'navigate');
+        fixture.detectChanges();
+        await fixture.whenStable();
+    });
 
-    fixture.detectChanges();
-  });
+    it('should create VisitAddComponent', () => {
+        expect(component).toBeTruthy();
+    });
 
-  it('should create VisitAddComponent', () => {
-    expect(component).toBeTruthy();
-  });
+    it('should disable the submit button until the form is valid', async () => {
+        expect(submitButton(fixture).disabled).toBe(true);
+        await setValue(fixture, '#description', 'rabies shot');
+        await setValue(fixture, '#date', '3/4/2024');
+        expect(submitButton(fixture).disabled).toBe(false);
+    });
+
+    it('should reject a blank description', async () => {
+        await setValue(fixture, '#date', '3/4/2024');
+        await setValue(fixture, '#description', ' ');
+        expect(fixture.nativeElement.textContent).toContain('Description is required');
+        expect(submitButton(fixture).disabled).toBe(true);
+    });
+
+    it('should add the visit and go back to the owner', async () => {
+        await setValue(fixture, '#date', '3/4/2024');
+        await setValue(fixture, '#description', 'rabies shot');
+
+        await submitForm(fixture);
+
+        expect(visitService.addVisit).toHaveBeenCalledWith({
+            id: null,
+            pet,
+            date: '2024-03-04',
+            description: 'rabies shot'
+        });
+        expect(router.navigate).toHaveBeenCalledWith(['/owners', 5]);
+    });
 });

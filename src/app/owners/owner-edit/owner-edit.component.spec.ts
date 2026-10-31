@@ -22,78 +22,104 @@
  * @author Vitaliy Fedoriv
  */
 
-import {
-  ComponentFixture,
-  TestBed,
-  waitForAsync,
-} from '@angular/core/testing';
+import { ComponentFixture, TestBed, } from '@angular/core/testing';
 import { CUSTOM_ELEMENTS_SCHEMA } from '@angular/core';
 import { OwnerEditComponent } from './owner-edit.component';
-import { FormsModule } from '@angular/forms';
-import { RouterTestingModule } from '@angular/router/testing';
+import { FormField, FormRoot } from '@angular/forms/signals';
 import { OwnerService } from '../owner.service';
-import { ActivatedRoute, Router } from '@angular/router';
-import { ActivatedRouteStub, RouterStub } from '../../testing/router-stubs';
+import { provideRouter, Router } from '@angular/router';
+import { RouterStub } from '../../testing/router-stubs';
 import { Owner } from '../owner';
 import { Observable, of } from 'rxjs';
 import { By } from '@angular/platform-browser';
 import { OwnerListComponent } from '../owner-list/owner-list.component';
 
 class OwnserServiceStub {
-  getOwnerById(): Observable<Owner> {
-    return of({ id: 1, firstName: 'James' } as Owner);
-  }
+    getOwnerById(): Observable<Owner> {
+        return of({ id: 1, firstName: 'James', lastName: 'Carter', address: '2749 Blackhawk Trail', city: 'Madison', telephone: '6085552765' } as Owner);
+    }
+    updateOwner(): Observable<Owner> {
+        return of({} as Owner);
+    }
 }
 
 describe('OwnerEditComponent', () => {
-  let component: OwnerEditComponent;
-  let fixture: ComponentFixture<OwnerEditComponent>;
-  let router: Router;
-  beforeEach(
-    waitForAsync(() => {
-      TestBed.configureTestingModule({
-        declarations: [OwnerEditComponent],
-        schemas: [CUSTOM_ELEMENTS_SCHEMA],
-        // schemas: [ NO_ERRORS_SCHEMA ],
-        imports: [FormsModule, RouterTestingModule.withRoutes([
-          { path: 'owners', component: OwnerListComponent}
-      ])],
-        providers: [
-          { provide: OwnerService, useClass: OwnserServiceStub },
-          { provide: Router, useClass: RouterStub },
-          { provide: ActivatedRoute, useClass: ActivatedRouteStub },
-        ],
-      }).compileComponents();
-    })
-  );
+    let component: OwnerEditComponent;
+    let fixture: ComponentFixture<OwnerEditComponent>;
+    let router: Router;
 
-  beforeEach(() => {
-    fixture = TestBed.createComponent(OwnerEditComponent);
-    component = fixture.componentInstance;
-    fixture.detectChanges();
-    router=TestBed.inject(Router);
-    spyOn(router,'navigate');
-  });
+    const setValue = async (selector: string, value: string) => {
+        const input = fixture.nativeElement.querySelector(selector) as HTMLInputElement;
+        input.value = value;
+        input.dispatchEvent(new Event('input'));
+        await fixture.whenStable();
+    };
+    const submitButton = () => fixture.nativeElement.querySelector('button[type=submit]') as HTMLButtonElement;
+    beforeEach(async () => {
+        await TestBed.configureTestingModule({
+            declarations: [OwnerEditComponent],
+            schemas: [CUSTOM_ELEMENTS_SCHEMA],
+            // schemas: [ NO_ERRORS_SCHEMA ],
+            imports: [FormField, FormRoot],
+            providers: [
+                provideRouter([{ path: 'owners', component: OwnerListComponent }]),
+                { provide: OwnerService, useClass: OwnserServiceStub },
+                { provide: Router, useClass: RouterStub },
+            ],
+        }).compileComponents();
+    });
 
-  it('should create OwnerEditComponent', () => {
-    expect(component).toBeTruthy();
-  });
+    beforeEach(async () => {
+        fixture = TestBed.createComponent(OwnerEditComponent);
+        fixture.componentRef.setInput('id', 1);
+        component = fixture.componentInstance;
+        fixture.detectChanges();
+        await fixture.whenStable();
+        router = TestBed.inject(Router);
+        vi.spyOn(router, 'navigate').mockReturnValue(undefined);
+    });
 
-  it('back button routing', async() => {
-    let buttons = fixture.debugElement.queryAll(By.css('button'));
-    let backbutton = buttons[0];
-    backbutton.triggerEventHandler('click', null);
-    spyOn(component, 'gotoOwnerDetail').and.callThrough();
-    expect(router.navigate).toHaveBeenCalledWith(['/owners', 1]);
-  });
+    it('should create OwnerEditComponent', () => {
+        expect(component).toBeTruthy();
+    });
 
- 
-  it('update owner', waitForAsync(() => {
-    let buttons = fixture.debugElement.queryAll(By.css('button'));
-    let updateOwnerButton = buttons[1].nativeElement;
-    spyOn(component, 'onSubmit');
-    updateOwnerButton.click();
-    expect(component.onSubmit).toHaveBeenCalled();
-  }));
+    it('back button routing', async () => {
+        let buttons = fixture.debugElement.queryAll(By.css('button'));
+        let backbutton = buttons[0];
+        backbutton.triggerEventHandler('click', null);
+        vi.spyOn(component, 'gotoOwnerDetail');
+        expect(router.navigate).toHaveBeenCalledWith(['/owners', 1]);
+    });
+
+
+    it('should display the loaded owner', () => {
+        expect(fixture.nativeElement.querySelector('#firstName').value).toBe('James');
+        expect(fixture.nativeElement.querySelector('#telephone').value).toBe('6085552765');
+        expect(submitButton().disabled).toBe(false);
+    });
+
+    it('update owner', async () => {
+        const updateOwner = vi.spyOn(TestBed.inject(OwnerService), 'updateOwner');
+        await setValue('#city', 'Windsor');
+
+        fixture.nativeElement.querySelector('form').dispatchEvent(new Event('submit'));
+        await fixture.whenStable();
+
+        expect(updateOwner).toHaveBeenCalledWith(1, {
+            id: 1,
+            firstName: 'James',
+            lastName: 'Carter',
+            address: '2749 Blackhawk Trail',
+            city: 'Windsor',
+            telephone: '6085552765'
+        });
+        expect(router.navigate).toHaveBeenCalledWith(['/owners', 1]);
+    });
+
+    it('should disable the submit button when the form is invalid', async () => {
+        await setValue('#telephone', 'abc');
+        expect(fixture.nativeElement.textContent).toContain('Phone number only accepts digits');
+        expect(submitButton().disabled).toBe(true);
+    });
 
 });

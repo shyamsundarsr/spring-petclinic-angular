@@ -21,11 +21,16 @@
  */
 
 
-import {Component, Input, OnInit} from '@angular/core';
+import { Component, computed, inject, input, signal } from '@angular/core';
+import { rxResource } from '@angular/core/rxjs-interop';
 import {Pet} from '../pet';
 import {PetType} from '../../pettypes/pettype';
 import {Owner} from '../../owners/owner';
-import {ActivatedRoute, Router} from '@angular/router';
+import {Router} from '@angular/router';
+import {form} from '@angular/forms/signals';
+import {firstValueFrom} from 'rxjs';
+import {petSchema, PetFormModel} from '../pet-form';
+import {resourceErrorMessage, valueOrDefault} from '../../utils/resource-utils';
 import {PetTypeService} from '../../pettypes/pettype.service';
 import {PetService} from '../pet.service';
 import {OwnerService} from '../../owners/owner.service';
@@ -38,51 +43,60 @@ import moment from 'moment';
   templateUrl: './pet-add.component.html',
   styleUrls: ['./pet-add.component.css']
 })
-export class PetAddComponent implements OnInit {
-  pet: Pet;
-  @Input() currentType: PetType;
-  currentOwner: Owner;
-  petTypes: PetType[];
-  addedSuccess = false;
-  errorMessage: string;
+export class PetAddComponent {
+  private ownerService = inject(OwnerService);
+  private petService = inject(PetService);
+  private petTypeService = inject(PetTypeService);
+  private router = inject(Router);
 
-  constructor(private ownerService: OwnerService, private petService: PetService,
-              private petTypeService: PetTypeService, private router: Router, private route: ActivatedRoute) {
-    this.pet = {} as Pet;
-    this.currentOwner = {} as Owner;
-    this.currentType = {} as PetType;
-    this.petTypes = [];
-  }
+  // owner id: route parameter, bound by the router (bindToComponentInputs)
+  readonly id = input<string>();
 
-  ngOnInit() {
-    this.petTypeService.getPetTypes().subscribe(
-      pettypes => this.petTypes = pettypes,
-      error => this.errorMessage = error as any);
+  private readonly petTypesResource = rxResource({
+    stream: () => this.petTypeService.getPetTypes(),
+  });
+  private readonly ownerResource = rxResource({
+    params: () => this.id(),
+    stream: ({ params }) => this.ownerService.getOwnerById(Number(params)),
+  });
 
-    const ownerId = this.route.snapshot.params.id;
-    this.ownerService.getOwnerById(ownerId).subscribe(
-      response => {
-        this.currentOwner = response;
-      },
-      error => this.errorMessage = error as any);
-  }
+  private readonly emptyOwner = {} as Owner;
 
-  onSubmit(pet: Pet) {
-    pet.id = null;
-    pet.owner = this.currentOwner;
-    // format output from datepicker to short string yyyy-mm-dd format (rfc3339)
-    pet.birthDate = moment(pet.birthDate).format('YYYY-MM-DD');
-    this.petService.addPet(pet).subscribe(
-      newPet => {
-        this.pet = newPet;
-        this.addedSuccess = true;
-        this.gotoOwnerDetail();
-      },
-      error => this.errorMessage = error as any);
-  }
+  private readonly pet = signal<PetFormModel>({ name: '', birthDate: null, typeId: '' });
+  readonly petTypes = computed(() => valueOrDefault(this.petTypesResource, [] as PetType[]));
+  readonly currentOwner = computed(() => valueOrDefault(this.ownerResource, this.emptyOwner));
+  readonly addedSuccess = signal(false);
+  private readonly submitError = signal<string | null>(null);
+  readonly errorMessage = computed(
+    () => this.submitError() ?? resourceErrorMessage(this.petTypesResource) ?? resourceErrorMessage(this.ownerResource)
+  );
+
+  protected readonly petForm = form(this.pet, petSchema, {
+    submission: {
+      action: async () => {
+        const { name, birthDate, typeId } = this.pet();
+        const pet = {
+          id: null,
+          owner: this.currentOwner(),
+          name,
+          // format output from datepicker to short string yyyy-mm-dd format (rfc3339)
+          birthDate: moment(birthDate).format('YYYY-MM-DD'),
+          type: this.petTypes().find(petType => String(petType.id) === typeId)
+        } as Pet;
+        try {
+          await firstValueFrom(this.petService.addPet(pet));
+          this.addedSuccess.set(true);
+          this.gotoOwnerDetail();
+        } catch (error) {
+          this.submitError.set(String(error));
+        }
+        return undefined;
+      }
+    }
+  });
 
   gotoOwnerDetail() {
-    this.router.navigate(['/owners', this.currentOwner.id]);
+    this.router.navigate(['/owners', this.currentOwner().id]);
   }
 
 }
